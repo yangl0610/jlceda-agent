@@ -1,0 +1,10 @@
+{
+  "components": [
+    {"id": "U1", "name": "STM32F103C8T6", "value": "", "package": "LQFP-48"},
+    {"id": "C1", "name": "100nF", "value": "100nF", "package": "0402"},
+    {"id": "C2", "name": "10uF", "value": "10uF", "package": "0805"},
+    {"id": "R1", "name": "10k", "value": "10k", "package": "0402"},
+    {"id": "J1", "name": "USB-TypeC", "value": "", "package": "USB-C-SMD"}
+  ],
+  "nets": ["VCC", "GND", "USBD+", "USBD-", "SWDIO", "SWDCLK"]
+}
