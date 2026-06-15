@@ -1,0 +1,23 @@
+{
+  "name": "jlceda-agent-bridge",
+  "uuid": "29ba65f2014e4d24ae8b98bfa1ce586e",
+  "displayName": "JLCEDA Agent Bridge",
+  "description": "把当前原理图的元件、网络、DRC、元件库搜索通过本地 WebSocket 暴露给 AI Agent",
+  "version": "0.1.0",
+  "publisher": "jlceda-agent",
+  "license": "Apache-2.0",
+  "engines": { "eda": "^2.3.0" },
+  "entry": "./dist/index",
+  "headerMenus": {
+    "sch": [
+      {
+        "id": "JlcedaAgentBridge",
+        "title": "AI Agent",
+        "menuItems": [
+          { "id": "connect", "title": "连接 Agent 桥接服务", "registerFn": "activateBridge" },
+          { "id": "disconnect", "title": "断开桥接", "registerFn": "deactivateBridge" }
+        ]
+      }
+    ]
+  }
+}

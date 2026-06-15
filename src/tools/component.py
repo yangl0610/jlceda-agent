@@ -7,11 +7,15 @@ from bridge.client import BridgeClient
 
 class SearchComponent(BaseTool):
     name = "search_component"
-    description = "在嘉立创元件库中搜索指定型号或关键词，返回匹配的元件列表"
+    description = "在嘉立创元件库中搜索器件候选项。参数: keyword*(关键词), limit(2-20)"
 
     def __init__(self, bridge: BridgeClient):
         self._bridge = bridge
 
     def run(self, params: dict[str, Any]) -> Any:
-        # params: {"keyword": "STM32F103", "limit": 10}
-        return self._bridge.call("search_component", params)
+        keyword = params.get("keyword", "")
+        limit = params.get("limit", 20)
+        return self._bridge.task(
+            "/bridge/jlceda/component/select",
+            {"keyword": keyword, "limit": limit, "page": 1},
+        )
