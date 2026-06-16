@@ -134,6 +134,15 @@ async def handle_bridge(websocket) -> None:
 
             if mtype == "bridge/hello":
                 client_id = str(data.get("clientId") or "")
+                # 同一 clientId 重连（插件心跳周期会每隔几分钟重拨）：
+                # 先把上一条连接的旧 socket 关掉，避免 ESTABLISHED 僵尸堆积。
+                old = _peers.get(client_id)
+                if old is not None and old.socket is not websocket:
+                    _socket_to_client.pop(old.socket, None)
+                    try:
+                        await old.socket.close()
+                    except Exception:
+                        pass
                 _peers[client_id] = Peer(client_id, websocket, time.time())
                 _socket_to_client[websocket] = client_id
                 await _send(websocket, {
@@ -195,17 +204,20 @@ async def _remove_peer(websocket, client_id: str) -> None:
         logging.info("mcp-bridge 已断开: %s", client_id)
 
 
-async def _dispatch_task(path: str, payload: dict, timeout: float = 30.0):
-    """把一次工具调用包成 bridge/task 派给 active 插件，等回 bridge/result。"""
+_DISCONNECT_MSG = "EDA bridge 连接已断开"
+
+
+async def _dispatch_once(path: str, payload: dict, timeout: float):
+    """派发一次任务并等结果。插件不在线时返回 (None, "disconnect") 以便上层重试。"""
     global _req_seq
     try:
-        await asyncio.wait_for(_get_event().wait(), timeout=10)
+        await asyncio.wait_for(_get_event().wait(), timeout=8)
     except asyncio.TimeoutError:
-        raise RuntimeError("嘉立创EDA扩展(mcp-bridge)未连接或未就绪，请在EDA中打开工程并确认桥接已连上本服务")
+        return None, "disconnect"
 
     peer = _peers.get(_active_client_id)
     if peer is None or not peer.ready:
-        raise RuntimeError("EDA bridge 未就绪")
+        return None, "disconnect"
 
     _req_seq += 1
     req_id = f"bridge_req_{_now_ms()}_{_req_seq}"
@@ -221,16 +233,37 @@ async def _dispatch_task(path: str, payload: dict, timeout: float = 30.0):
             "leaseTerm": _lease_term,
         })
         reply = await asyncio.wait_for(fut, timeout=timeout)
-    except asyncio.TimeoutError:
-        raise RuntimeError("EDA 任务响应超时")
+    except (asyncio.TimeoutError, websockets.ConnectionClosed):
+        return None, "disconnect"
     finally:
         _pending.pop(req_id, None)
 
     err = reply.get("error")
     if err:
         msg = err.get("message") if isinstance(err, dict) else str(err)
+        # 插件租约续期(每~2min 断开重连)恰好撞上时，回的是"已断开"，可安全重试
+        if msg and _DISCONNECT_MSG in msg:
+            return None, "disconnect"
         raise RuntimeError(msg or "EDA 任务执行出错")
-    return reply.get("result")
+    return reply.get("result"), None
+
+
+async def _dispatch_task(path: str, payload: dict, timeout: float = 30.0):
+    """把一次工具调用派给 active 插件。插件每隔约2分钟会做一次租约续期(断开+重连)，
+    任务若恰好撞上这个窗口会拿不到响应——这里对这类瞬时失败自动重试，等其重新就绪后重发。"""
+    attempts = 3
+    for i in range(attempts):
+        result, transient = await _dispatch_once(path, payload, timeout)
+        if transient is None:
+            return result
+        if i < attempts - 1:
+            # 等插件重新握手就绪（续期通常 <1s），再重发
+            try:
+                await asyncio.wait_for(_get_event().wait(), timeout=10)
+            except asyncio.TimeoutError:
+                pass
+            await asyncio.sleep(0.3)
+    raise RuntimeError("嘉立创EDA扩展(mcp-bridge)未就绪或响应超时，请确认EDA已打开工程且桥接在线")
 
 
 async def handle_agent(websocket, first: dict) -> None:

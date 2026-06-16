@@ -14,6 +14,15 @@ from src.tools import (
     RunDRC,
     InvokeEdaApi,
     AnalyzeImage,
+    GenerateBOM,
+    GetNetlist,
+    RunPcbDrc,
+    ExportGerber,
+    ExportPickPlace,
+    AutoRoute,
+    GetPcbLayout,
+    MoveComponent,
+    WebSearch,
 )
 from bridge.client import BridgeClient
 
@@ -40,9 +49,20 @@ def _register_eda_tools(tools: ToolRegistry) -> None:
         return
 
     bridge = BridgeClient()
+    # 原理图侧
     tools.register(GetSchematicInfo(bridge))
     tools.register(SearchComponent(bridge))
     tools.register(RunDRC(bridge))
+    tools.register(GenerateBOM(bridge))
+    tools.register(GetNetlist(bridge))
+    # PCB 侧
+    tools.register(GetPcbLayout(bridge))
+    tools.register(MoveComponent(bridge))
+    tools.register(RunPcbDrc(bridge))
+    tools.register(ExportGerber(bridge))
+    tools.register(ExportPickPlace(bridge))
+    tools.register(AutoRoute(bridge))
+    # 通用通道（兜底，调任意 eda.* API）
     tools.register(InvokeEdaApi(bridge))
 
 
@@ -61,9 +81,19 @@ def build_agent() -> AgentCore:
     except RuntimeError as e:
         print(f"[提示] 视觉工具未启用：{e}")
 
+    # 联网检索（复用 MiniMax coding-plan MCP 的 web_search）。
+    # 需 MINIMAX_API_KEY；设 WEB_SEARCH=0 可关闭。
+    if os.getenv("WEB_SEARCH", "1").lower() not in ("0", "false", "no", "") and os.getenv("MINIMAX_API_KEY"):
+        tools.register(WebSearch())
+    else:
+        print("[提示] 联网检索未启用（缺 MINIMAX_API_KEY 或 WEB_SEARCH=0）")
+
     max_steps = int(os.getenv("MAX_STEPS", "10"))
     max_history = int(os.getenv("MAX_HISTORY", "20"))
-    return AgentCore(llm=llm, tools=tools, max_steps=max_steps, max_history=max_history)
+    verbose = os.getenv("AGENT_VERBOSE", "1").lower() not in ("0", "false", "no", "")
+    return AgentCore(
+        llm=llm, tools=tools, max_steps=max_steps, max_history=max_history, verbose=verbose
+    )
 
 
 def main():
